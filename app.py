@@ -300,6 +300,30 @@ def build_experiment_html(collector_url: str = "") -> str:
               gap: 18px;
               padding: 18px 24px;
               border-bottom: 1px solid var(--line);
+              position: sticky;
+              top: 0;
+              z-index: 20;
+              background: rgba(251, 252, 253, 0.96);
+              backdrop-filter: blur(8px);
+              box-shadow: 0 8px 18px rgba(23, 32, 38, 0.06);
+            }
+
+            .key-reminder {
+              display: flex;
+              gap: 10px;
+              flex-wrap: wrap;
+              justify-content: flex-end;
+            }
+
+            .key-reminder span {
+              min-width: 64px;
+              padding: 7px 10px;
+              border: 1px solid var(--line);
+              border-radius: 8px;
+              background: #fff;
+              color: var(--ink);
+              text-align: center;
+              font-weight: 700;
             }
 
             .progress-meta {
@@ -493,7 +517,7 @@ def build_experiment_html(collector_url: str = "") -> str:
                     </div>
                     <div class="bar"><span id="progressBar"></span></div>
                   </div>
-                  <div class="progress-meta"><span>F=红</span><span>J=蓝</span><span>K=绿</span></div>
+                  <div class="key-reminder" aria-label="按键说明"><span>F = 红</span><span>J = 蓝</span><span>K = 绿</span></div>
                 </div>
                 <div id="stage" class="stage"></div>
                 <div id="feedback" class="feedback"></div>
@@ -523,6 +547,7 @@ def build_experiment_html(collector_url: str = "") -> str:
               formalTrials: [],
               trialPointer: 0,
               formalPointer: 0,
+              completedBreakBlocks: new Set(),
               awaitingResponse: false,
               stimulusOnset: 0,
               records: [],
@@ -658,6 +683,7 @@ def build_experiment_html(collector_url: str = "") -> str:
               state.formalTrials = trials.formal;
               state.trialPointer = 0;
               state.formalPointer = 0;
+              state.completedBreakBlocks = new Set();
               state.records = [];
               setScreen("practice");
               el.topStatus.textContent = "练习阶段";
@@ -792,7 +818,8 @@ def build_experiment_html(collector_url: str = "") -> str:
               const justFinishedBlock = state.formalPointer > 0 && state.formalPointer % 96 === 0;
               if (justFinishedBlock) {
                 const completedBlock = state.formalPointer / 96;
-                if (completedBlock < 3) {
+                if (completedBlock < 3 && !state.completedBreakBlocks.has(completedBlock)) {
+                  state.completedBreakBlocks.add(completedBlock);
                   showBreak(completedBlock);
                   return;
                 }

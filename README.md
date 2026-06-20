@@ -28,6 +28,10 @@ streamlit run app.py
 - `*_block_summary.csv`：block-level 汇总，推荐提交
 - `*_all_results.json`：完整备份，推荐保留
 
+如果在 Streamlit Secrets 中配置了 `COLLECTOR_URL`，测试结束后会自动把结果提交到老师的 Google Sheet。下载按钮仍会保留，用作备份。
+
+自动汇总设置见 `GOOGLE_SHEETS_SETUP.md`。
+
 ## 数据清洗规则
 
 正式分析仅使用正式测试 trials。练习阶段不进入分析。

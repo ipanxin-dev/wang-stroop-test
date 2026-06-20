@@ -1,3 +1,4 @@
+import json
 import textwrap
 
 import streamlit as st
@@ -12,8 +13,8 @@ st.set_page_config(
 )
 
 
-def build_experiment_html() -> str:
-    return textwrap.dedent(
+def build_experiment_html(collector_url: str = "") -> str:
+    html = textwrap.dedent(
         r"""
         <!doctype html>
         <html lang="zh-CN">
@@ -511,6 +512,7 @@ def build_experiment_html() -> str:
             const ISI_MS = 750;
             const ITI_MS = 500;
             const BREAK_MS = 60000;
+            const COLLECTOR_URL = __COLLECTOR_URL_JSON__;
 
             const state = {
               participantName: "",
@@ -920,6 +922,24 @@ def build_experiment_html() -> str:
               return `<a class="download-link" href="${url}" download="${filename}">${label}</a>`;
             }
 
+            async function autoSubmitResults(payload) {
+              if (!COLLECTOR_URL) {
+                return { enabled: false, ok: false, message: "未配置自动汇总。请下载结果文件并提交。" };
+              }
+
+              try {
+                await fetch(COLLECTOR_URL, {
+                  method: "POST",
+                  mode: "no-cors",
+                  headers: { "Content-Type": "text/plain;charset=utf-8" },
+                  body: JSON.stringify(payload),
+                });
+                return { enabled: true, ok: true, message: "已自动提交到老师的数据表。仍建议下载备份文件。" };
+              } catch (error) {
+                return { enabled: true, ok: false, message: "自动提交失败。请下载结果文件并按要求提交。" };
+              }
+            }
+
             function finishExperiment() {
               state.awaitingResponse = false;
               const fileBase = `stroop_${cleanFilePart(state.studentId)}_${cleanFilePart(state.participantName)}_${nowStamp()}`;
@@ -928,7 +948,7 @@ def build_experiment_html() -> str:
               const blockRows = computeBlockSummary();
               const sessionCsv = "\ufeff" + toCsv(sessionRows);
               const blockCsv = "\ufeff" + toCsv(blockRows);
-              const json = JSON.stringify({
+              const resultPayload = {
                 raw_data: state.records,
                 session_summary: sessionRows,
                 block_summary: blockRows,
@@ -938,24 +958,29 @@ def build_experiment_html() -> str:
                   formal_analysis_only: true,
                   practice_excluded_from_formal_analysis: true,
                 },
-              }, null, 2);
+              };
+              const json = JSON.stringify(resultPayload, null, 2);
 
               el.topStatus.textContent = "测试完成";
               el.feedback.textContent = "";
               el.stage.innerHTML = `
                 <div class="done-card">
                   <h2>测试已完成</h2>
-                  <p>正式成绩不在页面显示。请下载下方结果文件，并按老师要求提交。</p>
+                  <p id="submitStatus">${COLLECTOR_URL ? "正在自动提交到老师的数据表..." : "正式成绩不在页面显示。请下载下方结果文件，并按老师要求提交。"}</p>
                   <div class="downloads">
                     ${downloadLink(rawCsv, `${fileBase}_raw_trials.csv`, "下载 trial-level CSV")}
                     ${downloadLink(sessionCsv, `${fileBase}_session_summary.csv`, "下载 session CSV")}
                     ${downloadLink(blockCsv, `${fileBase}_block_summary.csv`, "下载 block CSV")}
                     ${downloadLink(json, `${fileBase}_all_results.json`, "下载 JSON 备份", "application/json")}
                   </div>
-                  <p class="small">建议至少提交 trial-level CSV 和 session CSV。不要刷新页面，刷新后本次结果会丢失。</p>
+                  <p class="small">请至少保留下载备份。不要刷新页面，刷新后本次结果会丢失。</p>
                 </div>
               `;
               updateProgress(3, 96, 96, "完成");
+              autoSubmitResults(resultPayload).then((result) => {
+                const submitStatus = document.getElementById("submitStatus");
+                if (submitStatus) submitStatus.textContent = result.message;
+              });
             }
 
             el.startBtn.addEventListener("click", startExperiment);
@@ -965,6 +990,13 @@ def build_experiment_html() -> str:
         </html>
         """
     )
+    return html.replace("__COLLECTOR_URL_JSON__", json.dumps(collector_url.strip()))
+
+
+try:
+    collector_url = st.secrets.get("COLLECTOR_URL", "")
+except Exception:
+    collector_url = ""
 
 
 st.markdown(
@@ -989,4 +1021,4 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-components.html(build_experiment_html(), height=900, scrolling=True)
+components.html(build_experiment_html(collector_url), height=900, scrolling=True)

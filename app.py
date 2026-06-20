@@ -949,9 +949,14 @@ def build_experiment_html(collector_url: str = "") -> str:
               return `<a class="download-link" href="${url}" download="${filename}">${label}</a>`;
             }
 
+            function setBackupVisibility(show) {
+              const backup = document.getElementById("backupDownloads");
+              if (backup) backup.classList.toggle("hidden", !show);
+            }
+
             async function autoSubmitResults(payload) {
               if (!COLLECTOR_URL) {
-                return { enabled: false, ok: false, message: "未配置自动汇总。请下载结果文件并提交。" };
+                return { enabled: false, ok: false, message: "未配置自动汇总。请下载备份数据并提交给老师。" };
               }
 
               try {
@@ -961,20 +966,17 @@ def build_experiment_html(collector_url: str = "") -> str:
                   headers: { "Content-Type": "text/plain;charset=utf-8" },
                   body: JSON.stringify(payload),
                 });
-                return { enabled: true, ok: true, message: "已自动提交到老师的数据表。仍建议下载备份文件。" };
+                return { enabled: true, ok: true, message: "数据已发送。你可以关闭此页面。" };
               } catch (error) {
-                return { enabled: true, ok: false, message: "自动提交失败。请下载结果文件并按要求提交。" };
+                return { enabled: true, ok: false, message: "自动提交失败。请下载备份数据并提交给老师。" };
               }
             }
 
             function finishExperiment() {
               state.awaitingResponse = false;
               const fileBase = `stroop_${cleanFilePart(state.studentId)}_${cleanFilePart(state.participantName)}_${nowStamp()}`;
-              const rawCsv = "\ufeff" + toCsv(state.records);
               const sessionRows = computeSessionSummary();
               const blockRows = computeBlockSummary();
-              const sessionCsv = "\ufeff" + toCsv(sessionRows);
-              const blockCsv = "\ufeff" + toCsv(blockRows);
               const resultPayload = {
                 raw_data: state.records,
                 session_summary: sessionRows,
@@ -993,20 +995,18 @@ def build_experiment_html(collector_url: str = "") -> str:
               el.stage.innerHTML = `
                 <div class="done-card">
                   <h2>测试已完成</h2>
-                  <p id="submitStatus">${COLLECTOR_URL ? "正在自动提交到老师的数据表..." : "正式成绩不在页面显示。请下载下方结果文件，并按老师要求提交。"}</p>
-                  <div class="downloads">
-                    ${downloadLink(rawCsv, `${fileBase}_raw_trials.csv`, "下载 trial-level CSV")}
-                    ${downloadLink(sessionCsv, `${fileBase}_session_summary.csv`, "下载 session CSV")}
-                    ${downloadLink(blockCsv, `${fileBase}_block_summary.csv`, "下载 block CSV")}
-                    ${downloadLink(json, `${fileBase}_all_results.json`, "下载 JSON 备份", "application/json")}
+                  <p id="submitStatus">${COLLECTOR_URL ? "正在发送到老师的数据表..." : "正式成绩不在页面显示。请下载备份数据并提交给老师。"}</p>
+                  <div id="backupDownloads" class="downloads ${COLLECTOR_URL ? "hidden" : ""}">
+                    ${downloadLink(json, `${fileBase}_all_results.json`, "下载备份数据", "application/json")}
                   </div>
-                  <p class="small">请至少保留下载备份。不要刷新页面，刷新后本次结果会丢失。</p>
+                  <p class="small">如果老师确认数据已收到，无需提交任何文件。不要刷新页面，刷新后本次结果会丢失。</p>
                 </div>
               `;
               updateProgress(3, 96, 96, "完成");
               autoSubmitResults(resultPayload).then((result) => {
                 const submitStatus = document.getElementById("submitStatus");
                 if (submitStatus) submitStatus.textContent = result.message;
+                setBackupVisibility(!result.enabled || !result.ok);
               });
             }
 

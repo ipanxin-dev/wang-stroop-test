@@ -13,7 +13,7 @@ st.set_page_config(
 )
 
 
-def build_experiment_html(collector_url: str = "") -> str:
+def build_experiment_html(collector_url: str = "", preview_end: bool = False) -> str:
     html = textwrap.dedent(
         r"""
         <!doctype html>
@@ -500,10 +500,11 @@ def build_experiment_html(collector_url: str = "") -> str:
                   </div>
 
                   <div class="small">
-                    正式测试结束后不会显示成绩。请下载结果文件并按老师要求提交。
+                    正式测试结束后不会显示成绩。数据会自动发送，下载仅作为备用。
                   </div>
                   <div id="error" class="error"></div>
                   <button id="startBtn" class="primary" type="button">开始练习</button>
+                  <button id="previewEndBtn" class="secondary hidden" type="button">预览结束页（不提交）</button>
                 </div>
               </div>
 
@@ -537,6 +538,7 @@ def build_experiment_html(collector_url: str = "") -> str:
             const ITI_MS = 500;
             const BREAK_MS = 60000;
             const COLLECTOR_URL = __COLLECTOR_URL_JSON__;
+            const PREVIEW_END = __PREVIEW_END_JSON__;
 
             const state = {
               participantName: "",
@@ -559,6 +561,7 @@ def build_experiment_html(collector_url: str = "") -> str:
               stage: document.getElementById("stage"),
               feedback: document.getElementById("feedback"),
               startBtn: document.getElementById("startBtn"),
+              previewEndBtn: document.getElementById("previewEndBtn"),
               error: document.getElementById("error"),
               name: document.getElementById("participantName"),
               sid: document.getElementById("studentId"),
@@ -702,6 +705,50 @@ def build_experiment_html(collector_url: str = "") -> str:
                 </div>
               `;
               document.getElementById("readyButton").addEventListener("click", onClick, { once: true });
+            }
+
+            function makePreviewRecord(block, trialIndex, condition, stimulus, fontColor, responseKey, rt) {
+              return {
+                participant_name: state.participantName,
+                participant_student_id: state.studentId,
+                session_id: state.sessionId,
+                phase: "formal",
+                block,
+                trial_index: trialIndex,
+                phase_trial_index: trialIndex,
+                condition,
+                stimulus,
+                font_color: fontColor,
+                font_color_label: COLORS[fontColor].label,
+                correct_response: COLORS[fontColor].key.toUpperCase(),
+                response_key: responseKey.toUpperCase(),
+                response_color: RESPONSE_LABEL[responseKey] || "",
+                accuracy: 1,
+                RT_ms: rt,
+                rt_lt_200_excluded: 0,
+                rt_gt_3000_excluded: 0,
+                valid_for_analysis: 1,
+                missed_trial: 0,
+                timestamp_iso: new Date().toISOString(),
+              };
+            }
+
+            function previewEndScreen() {
+              const participantName = el.name.value.trim() || "预览学生";
+              const studentId = el.sid.value.trim() || "preview";
+              state.participantName = participantName;
+              state.studentId = studentId;
+              state.sessionId = `preview_${Date.now()}`;
+              state.records = [
+                makePreviewRecord(1, 1, "congruent", "红", "红", "f", 610),
+                makePreviewRecord(1, 2, "incongruent", "红", "蓝", "j", 760),
+                makePreviewRecord(2, 97, "congruent", "蓝", "蓝", "j", 590),
+                makePreviewRecord(2, 98, "incongruent", "蓝", "绿", "k", 810),
+                makePreviewRecord(3, 193, "congruent", "绿", "绿", "k", 630),
+                makePreviewRecord(3, 194, "incongruent", "绿", "红", "f", 840),
+              ];
+              setScreen("formal");
+              finishExperiment({ preview: true });
             }
 
             function updateProgress(phase, current, total, condition = "请看字体颜色") {
@@ -972,8 +1019,10 @@ def build_experiment_html(collector_url: str = "") -> str:
               }
             }
 
-            function finishExperiment() {
+            function finishExperiment(options = {}) {
               state.awaitingResponse = false;
+              const isPreview = options.preview === true;
+              const shouldSubmit = Boolean(COLLECTOR_URL && !isPreview);
               const fileBase = `stroop_${cleanFilePart(state.studentId)}_${cleanFilePart(state.participantName)}_${nowStamp()}`;
               const sessionRows = computeSessionSummary();
               const blockRows = computeBlockSummary();
@@ -995,14 +1044,15 @@ def build_experiment_html(collector_url: str = "") -> str:
               el.stage.innerHTML = `
                 <div class="done-card">
                   <h2>测试已完成</h2>
-                  <p id="submitStatus">${COLLECTOR_URL ? "正在发送到老师的数据表..." : "正式成绩不在页面显示。请下载备份数据并提交给老师。"}</p>
-                  <div id="backupDownloads" class="downloads ${COLLECTOR_URL ? "hidden" : ""}">
+                  <p id="submitStatus">${isPreview ? "这是结束页预览，不会提交数据。" : shouldSubmit ? "正在发送到老师的数据表..." : "正式成绩不在页面显示。请下载备份数据并提交给老师。"}</p>
+                  <div id="backupDownloads" class="downloads ${shouldSubmit || isPreview ? "hidden" : ""}">
                     ${downloadLink(json, `${fileBase}_all_results.json`, "下载备份数据", "application/json")}
                   </div>
                   <p class="small">如果老师确认数据已收到，无需提交任何文件。不要刷新页面，刷新后本次结果会丢失。</p>
                 </div>
               `;
               updateProgress(3, 96, 96, "完成");
+              if (isPreview) return;
               autoSubmitResults(resultPayload).then((result) => {
                 const submitStatus = document.getElementById("submitStatus");
                 if (submitStatus) submitStatus.textContent = result.message;
@@ -1011,19 +1061,35 @@ def build_experiment_html(collector_url: str = "") -> str:
             }
 
             el.startBtn.addEventListener("click", startExperiment);
+            if (PREVIEW_END) {
+              el.previewEndBtn.classList.remove("hidden");
+              el.previewEndBtn.addEventListener("click", previewEndScreen);
+            }
             document.addEventListener("keydown", handleKeydown);
           </script>
         </body>
         </html>
         """
     )
-    return html.replace("__COLLECTOR_URL_JSON__", json.dumps(collector_url.strip()))
+    return (
+        html.replace("__COLLECTOR_URL_JSON__", json.dumps(collector_url.strip()))
+        .replace("__PREVIEW_END_JSON__", json.dumps(bool(preview_end)))
+    )
 
 
 try:
     collector_url = st.secrets.get("COLLECTOR_URL", "")
 except Exception:
     collector_url = ""
+
+try:
+    preview_end = str(st.query_params.get("preview_end", "")).lower() in {"1", "true", "yes"}
+except Exception:
+    preview_end = st.experimental_get_query_params().get("preview_end", [""])[0].lower() in {
+        "1",
+        "true",
+        "yes",
+    }
 
 
 st.markdown(
@@ -1048,4 +1114,4 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-components.html(build_experiment_html(collector_url), height=900, scrolling=True)
+components.html(build_experiment_html(collector_url, preview_end), height=900, scrolling=True)

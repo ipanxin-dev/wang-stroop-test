@@ -70,10 +70,34 @@ function responseColor(key) {
   return item ? item.word : "";
 }
 
+function keyReminderHtml() {
+  return `
+    <div class="key-reminder" aria-label="按键颜色提示">
+      ${COLORS.map(
+        (color) => `
+          <div class="key-reminder-item">
+            <b>${color.keyLabel}</b>
+            <span style="color:${color.css};">${color.word}</span>
+          </div>
+        `,
+      ).join("")}
+    </div>
+  `;
+}
+
+function fixationStimulus(trial) {
+  return `
+    ${progressHtml(trial)}
+    <div class="fixation">+</div>
+    ${keyReminderHtml()}
+  `;
+}
+
 function trialStimulus(trial) {
   return `
     ${progressHtml(trial)}
     <div class="stimulus" style="color:${trial.ink.css};">${escapeHtml(trial.word)}</div>
+    ${keyReminderHtml()}
   `;
 }
 
@@ -436,6 +460,7 @@ function introHtml() {
       <div class="notice">
         <h2>按键映射</h2>
         <div class="key-grid">${keyCards}</div>
+        <p class="muted">按键对应关系：D = 红，F = 蓝，J = 绿，K = 黄。实验过程中页面底部也会持续显示提示。</p>
       </div>
     </div>
   `;
@@ -466,7 +491,7 @@ function makeTrialTimeline(trial, jsPsych) {
   return [
     {
       type: jsPsychHtmlKeyboardResponse,
-      stimulus: `<div class="fixation">+</div>`,
+      stimulus: () => fixationStimulus(trial),
       choices: "NO_KEYS",
       trial_duration: trial.fixation_ms,
       data: { task: "fixation" },
@@ -486,8 +511,8 @@ function feedbackTrial() {
     type: jsPsychHtmlKeyboardResponse,
     stimulus: () => {
       const last = events[events.length - 1];
-      if (last && last.accuracy === true) return '<div class="feedback-good">正确</div>';
-      return '<div class="feedback-bad">错误</div>';
+      const feedback = last && last.accuracy === true ? '<div class="feedback-good">正确</div>' : '<div class="feedback-bad">错误</div>';
+      return `${feedback}${keyReminderHtml()}`;
     },
     choices: "NO_KEYS",
     trial_duration: 650,

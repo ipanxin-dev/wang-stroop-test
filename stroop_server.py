@@ -80,6 +80,26 @@ TRIAL_COLUMNS = [
 
 FEISHU_DATE_COLUMNS = {"started_at", "finished_at", "timestamp"}
 FEISHU_BOOLEAN_COLUMNS = {"accuracy"}
+FEISHU_NUMBER_COLUMNS = {
+    "practice_trial_count",
+    "formal_trial_count",
+    "total_correct",
+    "total_errors",
+    "accuracy_percent",
+    "mean_rt_correct_ms",
+    "mean_rt_congruent_ms",
+    "mean_rt_incongruent_ms",
+    "mean_rt_neutral_ms",
+    "stroop_interference_ms",
+    "duration_sec",
+    "trial_count",
+    "trial_index",
+    "block_index",
+    "trial_in_block",
+    "formal_trial_index",
+    "rt_ms",
+    "fixation_ms",
+}
 
 write_lock = threading.Lock()
 feishu_token_cache: dict[str, Any] = {"token": "", "expires_at": 0.0}
@@ -187,13 +207,15 @@ def get_feishu_tenant_access_token() -> str:
     return str(token)
 
 
-def feishu_field_value(value: Any) -> Any:
+def feishu_field_value(value: Any) -> str:
     if value is None:
         return ""
     if isinstance(value, bool):
         return "TRUE" if value else "FALSE"
-    if isinstance(value, (int, float, str)):
+    if isinstance(value, str):
         return value
+    if isinstance(value, (int, float)):
+        return str(value)
     return json.dumps(value, ensure_ascii=False)
 
 
@@ -225,15 +247,36 @@ def feishu_boolean_value(value: Any) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "y", "正确"}
 
 
+def feishu_number_value(value: Any) -> Any:
+    if value in (None, ""):
+        return None
+    if isinstance(value, bool):
+        return 1 if value else 0
+    if isinstance(value, (int, float)):
+        return value
+    text = str(value).strip()
+    try:
+        number = float(text)
+    except ValueError:
+        return None
+    return int(number) if number.is_integer() else number
+
+
 def feishu_fields(row: dict[str, Any], columns: list[str]) -> dict[str, Any]:
-    return {
-        column: feishu_date_value(row.get(column, ""))
-        if column in FEISHU_DATE_COLUMNS
-        else feishu_boolean_value(row.get(column, ""))
-        if column in FEISHU_BOOLEAN_COLUMNS
-        else feishu_field_value(row.get(column, ""))
-        for column in columns
-    }
+    fields: dict[str, Any] = {}
+    for column in columns:
+        value = row.get(column, "")
+        if column in FEISHU_DATE_COLUMNS:
+            fields[column] = feishu_date_value(value)
+        elif column in FEISHU_BOOLEAN_COLUMNS:
+            fields[column] = feishu_boolean_value(value)
+        elif column in FEISHU_NUMBER_COLUMNS:
+            number_value = feishu_number_value(value)
+            if number_value is not None:
+                fields[column] = number_value
+        else:
+            fields[column] = feishu_field_value(value)
+    return fields
 
 
 def feishu_batch_create(table_id: str, rows: list[dict[str, Any]], columns: list[str]) -> int:
